@@ -1,88 +1,103 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>이중 이미지 메이커</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.31.0/build/stlite.css" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.31.0/build/stlite.js"></script>
-    <script>
-      stlite.mount({
-        requirements: ["pillow", "numpy"], 
-        entrypoint: "app.py",
-        files: {
-          "app.py": `
-import streamlit as st
-from PIL import Image, ImageOps
-import numpy as np
-import io
-import datetime
-from datetime import timedelta, timezone
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; line-height: 1.6; }
+        .container { max-width: 500px; margin: 0 auto; border: 1px solid #ccc; padding: 20px; border-radius: 10px; }
+        input { margin: 10px 0; width: 100%; }
+        button { background: #007BFF; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        canvas { max-width: 100%; margin-top: 20px; border: 1px solid #eee; }
+        #downloadBtn { display: none; background: #28a745; margin-top: 10px; text-decoration: none; color: white; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
 
-st.set_page_config(page_title="이중 이미지 메이커", page_icon="🌓")
+<div class="container">
+    <h2>🌓 이중 이미지 메이커</h2>
+    <p>다크용과 라이트용 이미지를 선택하세요.</p>
+    
+    <label>🌑 다크 모드용:</label>
+    <input type="file" id="darkInput" accept="image/*">
+    
+    <label>☀️ 라이트 모드용:</label>
+    <input type="file" id="lightInput" accept="image/*">
+    
+    <button onclick="processImages()">이미지 생성하기</button>
+    
+    <canvas id="resultCanvas"></canvas>
+    <a id="downloadBtn">결과 저장하기</a>
+</div>
 
-if "reset_counter" not in st.session_state:
-    st.session_state["reset_counter"] = 0
+<script>
+async function processImages() {
+    const darkFile = document.getElementById('darkInput').files[0];
+    const lightFile = document.getElementById('lightInput').files[0];
 
-def reset_all():
-    st.session_state["reset_counter"] += 1
+    if (!darkFile || !lightFile) {
+        alert("이미지 두 개를 모두 골라주세요!");
+        return;
+    }
 
-st.title("🌓 이중 이미지 메이커")
-st.write("다크 모드와 라이트 모드에서 각각 다르게 보이는 이미지를 만듭니다.")
+    const loadImage = (file) => new Promise((res) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.src = URL.createObjectURL(file);
+    });
 
-if st.button("🔄 전체 초기화"):
-    reset_all()
-    st.rerun()
+    const imgD = await loadImage(darkFile);
+    const imgL = await loadImage(lightFile);
 
-st.divider()
-st.subheader("1. 이미지 선택")
-col1, col2 = st.columns(2)
+    const canvas = document.getElementById('resultCanvas');
+    const ctx = canvas.getContext('2d');
 
-with col1:
-    dark_file = st.file_uploader("다크 모드", type=['png', 'jpg', 'jpeg', 'webp'], key=f"dark_{st.session_state['reset_counter']}")
+    // 사이즈 결정 (작은 쪽에 맞춤)
+    const width = Math.min(imgD.width, imgL.width);
+    const height = Math.min(imgD.height, imgL.height);
+    canvas.width = width;
+    canvas.height = height;
 
-with col2:
-    light_file = st.file_uploader("라이트 모드", type=['png', 'jpg', 'jpeg', 'webp'], key=f"light_{st.session_state['reset_counter']}")
+    // 이미지 그리기 및 데이터 추출
+    ctx.drawImage(imgD, 0, 0, width, height);
+    const dataD = ctx.getImageData(0, 0, width, height).data;
+    
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(imgL, 0, 0, width, height);
+    const dataL = ctx.getImageData(0, 0, width, height).data;
 
-st.divider()
-st.subheader("2. 이미지 생성")
+    const output = ctx.createImageData(width, height);
+    const d = output.data;
 
-if st.button("이미지 생성", type="primary", use_container_width=True):
-    if not dark_file or not light_file:
-        st.warning("두 이미지를 모두 선택해야 합니다")
-    else:
-        try:
-            img1 = Image.open(dark_file).convert('L')
-            img2 = Image.open(light_file).convert('L')
-            size1 = img1.size[0] * img1.size[1]
-            size2 = img2.size[0] * img2.size[1]
-            target_size = img2.size if size1 > size2 else img1.size
-            img1 = ImageOps.pad(img1, target_size, color=0)
-            img2 = ImageOps.pad(img2, target_size, color=255)
-            c_black = np.array(img1) / 255.0 * 0.5
-            c_white = (np.array(img2) / 255.0 * 0.5) + 0.5
-            alpha = 1.0 - (c_white - c_black)
-            alpha_safe = np.clip(alpha, 0.001, 1.0)
-            c_src = np.clip((c_black / alpha_safe) * 255, 0, 255).astype(np.uint8)
-            alpha_8bit = (alpha * 255).astype(np.uint8)
-            result = Image.merge('RGBA', (Image.fromarray(c_src), Image.fromarray(c_src), Image.fromarray(c_src), Image.fromarray(alpha_8bit)))
-            st.success("이미지 생성이 완료되었습니다")
-            st.image(result, caption="생성된 이미지 미리보기")
-            kst = timezone(timedelta(hours=9))
-            now_kst = datetime.datetime.now(kst)
-            file_name = f"dual_{now_kst.strftime('%Y%m%d_%H%M%S')}.png"
-            buf = io.BytesIO()
-            result.save(buf, format="PNG")
-            st.download_button(label="결과 이미지 저장하기", data=buf.getvalue(), file_name=file_name, mime="image/png", use_container_width=True)
-        except Exception as e:
-            st.error(f"오류 발생: {e}")
-          `,
-        },
-      }, document.getElementById("root"));
-    </script>
-  </body>
+    for (let i = 0; i < dataD.length; i += 4) {
+        // 그레이스케일 계산
+        const gD = (dataD[i] + dataD[i+1] + dataD[i+2]) / 3;
+        const gL = (dataL[i] + dataL[i+1] + dataL[i+2]) / 3;
+
+        const c_black = (gD / 255) * 0.5;
+        const c_white = (gL / 255) * 0.5 + 0.5;
+
+        let alpha = 1.0 - (c_white - c_black);
+        alpha = Math.max(0.001, Math.min(1.0, alpha));
+
+        let c_src = (c_black / alpha) * 255;
+        c_src = Math.max(0, Math.min(255, c_src));
+
+        d[i] = d[i+1] = d[i+2] = c_src; // RGB
+        d[i+3] = alpha * 255;           // Alpha
+    }
+
+    ctx.putImageData(output, 0, 0);
+
+    // 다운로드 버튼 활성화
+    const downloadBtn = document.getElementById('downloadBtn');
+    downloadBtn.href = canvas.toDataURL("image/png");
+    downloadBtn.download = "dual_image.png";
+    downloadBtn.style.display = "block";
+}
+</script>
+
+</body>
 </html>
