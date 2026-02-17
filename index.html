@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>이중 이미지 메이커</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.31.0/build/stlite.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.31.0/build/stlite.js"></script>
+    <script>
+      stlite.mount({
+        requirements: ["pillow", "numpy"], 
+        entrypoint: "app.py",
+        files: {
+          "app.py": `
+import streamlit as st
+from PIL import Image, ImageOps
+import numpy as np
+import io
+import datetime
+from datetime import timedelta, timezone
+
+st.set_page_config(page_title="이중 이미지 메이커", page_icon="🌓")
+
+if "reset_counter" not in st.session_state:
+    st.session_state["reset_counter"] = 0
+
+def reset_all():
+    st.session_state["reset_counter"] += 1
+
+st.title("🌓 이중 이미지 메이커")
+st.write("다크 모드와 라이트 모드에서 각각 다르게 보이는 이미지를 만듭니다.")
+
+if st.button("🔄 전체 초기화"):
+    reset_all()
+    st.rerun()
+
+st.divider()
+st.subheader("1. 이미지 선택")
+col1, col2 = st.columns(2)
+
+with col1:
+    dark_file = st.file_uploader("다크 모드", type=['png', 'jpg', 'jpeg', 'webp'], key=f"dark_{st.session_state['reset_counter']}")
+
+with col2:
+    light_file = st.file_uploader("라이트 모드", type=['png', 'jpg', 'jpeg', 'webp'], key=f"light_{st.session_state['reset_counter']}")
+
+st.divider()
+st.subheader("2. 이미지 생성")
+
+if st.button("이미지 생성", type="primary", use_container_width=True):
+    if not dark_file or not light_file:
+        st.warning("두 이미지를 모두 선택해야 합니다")
+    else:
+        try:
+            img1 = Image.open(dark_file).convert('L')
+            img2 = Image.open(light_file).convert('L')
+            size1 = img1.size[0] * img1.size[1]
+            size2 = img2.size[0] * img2.size[1]
+            target_size = img2.size if size1 > size2 else img1.size
+            img1 = ImageOps.pad(img1, target_size, color=0)
+            img2 = ImageOps.pad(img2, target_size, color=255)
+            c_black = np.array(img1) / 255.0 * 0.5
+            c_white = (np.array(img2) / 255.0 * 0.5) + 0.5
+            alpha = 1.0 - (c_white - c_black)
+            alpha_safe = np.clip(alpha, 0.001, 1.0)
+            c_src = np.clip((c_black / alpha_safe) * 255, 0, 255).astype(np.uint8)
+            alpha_8bit = (alpha * 255).astype(np.uint8)
+            result = Image.merge('RGBA', (Image.fromarray(c_src), Image.fromarray(c_src), Image.fromarray(c_src), Image.fromarray(alpha_8bit)))
+            st.success("이미지 생성이 완료되었습니다")
+            st.image(result, caption="생성된 이미지 미리보기")
+            kst = timezone(timedelta(hours=9))
+            now_kst = datetime.datetime.now(kst)
+            file_name = f"dual_{now_kst.strftime('%Y%m%d_%H%M%S')}.png"
+            buf = io.BytesIO()
+            result.save(buf, format="PNG")
+            st.download_button(label="결과 이미지 저장하기", data=buf.getvalue(), file_name=file_name, mime="image/png", use_container_width=True)
+        except Exception as e:
+            st.error(f"오류 발생: {e}")
+          `,
+        },
+      }, document.getElementById("root"));
+    </script>
+  </body>
+</html>
