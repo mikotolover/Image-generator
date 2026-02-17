@@ -18,12 +18,12 @@
 
 <div class="container">
     <h2>🌓 이중 이미지 메이커</h2>
-    <p>다크용과 라이트용 이미지를 선택하세요.</p>
+    <p>다크모드에서 보일 이미지와 라이트모드에서 보일 이미지를 선택하세요.</p>
     
-    <label>🌑 다크 모드용:</label>
+    <label>🌑 다크 모드:</label>
     <input type="file" id="darkInput" accept="image/*">
     
-    <label>☀️ 라이트 모드용:</label>
+    <label>☀️ 라이트 모드:</label>
     <input type="file" id="lightInput" accept="image/*">
     
     <button onclick="processImages()">이미지 생성하기</button>
@@ -38,7 +38,7 @@ async function processImages() {
     const lightFile = document.getElementById('lightInput').files[0];
 
     if (!darkFile || !lightFile) {
-        alert("이미지 두 개를 모두 골라주세요!");
+        alert("이미지 두 개를 모두 골라주세요");
         return;
     }
 
