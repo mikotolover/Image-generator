@@ -42,25 +42,26 @@ async function processImages() {
         return;
     }
 
-    const loadImage = (file) => new Promise((res) => {
+    const loadImage = (file) => new Promise((resolve) => {
         const img = new Image();
-        img.onload = () => res(img);
-        img.src = URL.createObjectURL(file);
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(img);
+        };
+        img.src = url;
     });
 
-    const imgD = await loadImage(darkFile);
-    const imgL = await loadImage(lightFile);
+    const [imgD, imgL] = await Promise.all([loadImage(darkFile), loadImage(lightFile)]);
 
     const canvas = document.getElementById('resultCanvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    // 사이즈 결정 (작은 쪽에 맞춤)
     const width = Math.min(imgD.width, imgL.width);
     const height = Math.min(imgD.height, imgL.height);
     canvas.width = width;
     canvas.height = height;
 
-    // 이미지 그리기 및 데이터 추출
     ctx.drawImage(imgD, 0, 0, width, height);
     const dataD = ctx.getImageData(0, 0, width, height).data;
     
@@ -71,30 +72,29 @@ async function processImages() {
     const output = ctx.createImageData(width, height);
     const d = output.data;
 
-    for (let i = 0; i < dataD.length; i += 4) {
-        // 그레이스케일 계산
-        const gD = (dataD[i] + dataD[i+1] + dataD[i+2]) / 3;
-        const gL = (dataL[i] + dataL[i+1] + dataL[i+2]) / 3;
+    for (let i = 0; i < d.length; i += 4) {
+        const gD = (dataD[i] + dataD[i+1] + dataD[i+2]) / 765;
+        const gL = (dataL[i] + dataL[i+1] + dataL[i+2]) / 765;
 
-        const c_black = (gD / 255) * 0.5;
-        const c_white = (gL / 255) * 0.5 + 0.5;
+        const c_black = gD * 0.5;
+        const c_white = gL * 0.5 + 0.5;
 
-        let alpha = 1.0 - (c_white - c_black);
-        alpha = Math.max(0.001, Math.min(1.0, alpha));
+        let alpha = Math.max(0.001, Math.min(1.0, 1.0 - (c_white - c_black)));
+        let c_src = Math.max(0, Math.min(255, (c_black / alpha) * 255));
 
-        let c_src = (c_black / alpha) * 255;
-        c_src = Math.max(0, Math.min(255, c_src));
-
-        d[i] = d[i+1] = d[i+2] = c_src; // RGB
-        d[i+3] = alpha * 255;           // Alpha
+        d[i] = d[i+1] = d[i+2] = c_src;
+        d[i+3] = alpha * 255;
     }
 
     ctx.putImageData(output, 0, 0);
 
-    // 다운로드 버튼 활성화
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    
     const downloadBtn = document.getElementById('downloadBtn');
     downloadBtn.href = canvas.toDataURL("image/png");
-    downloadBtn.download = "dual_image.png";
+    downloadBtn.download = `dual_image_${timestamp}.png`;
     downloadBtn.style.display = "block";
 }
 </script>
