@@ -6,10 +6,32 @@
     <title>이중 이미지 메이커</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; line-height: 1.6; }
-        .container { max-width: 500px; margin: 0 auto; border: 1px solid #ccc; padding: 20px; border-radius: 10px; }
+        /* 버튼 위치를 잡기 위해 relative 설정 추가 */
+        .container { 
+            max-width: 500px; 
+            margin: 0 auto; 
+            border: 1px solid #ccc; 
+            padding: 20px; 
+            border-radius: 10px; 
+            position: relative; 
+        }
         input { margin: 10px 0; width: 100%; }
         button { background: #007BFF; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
         button:hover { background: #0056b3; }
+        
+        /* 오른쪽 위 구석에 배치할 스왑 버튼 스타일 */
+        .swap-btn { 
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #6c757d; 
+            width: auto; 
+            padding: 5px 10px; 
+            font-size: 12px; 
+            line-height: 1.2;
+        }
+        .swap-btn:hover { background: #5a6268; }
+        
         canvas { max-width: 100%; margin-top: 20px; border: 1px solid #eee; }
         #downloadBtn { display: none; background: #28a745; margin-top: 10px; text-decoration: none; color: white; padding: 10px; border-radius: 5px; }
     </style>
@@ -18,6 +40,9 @@
 
 <div class="container">
     <h2>🌓 이중 이미지 메이커</h2>
+    
+    <button type="button" class="swap-btn" onclick="swapFiles()">⇅ 위치 바꾸기</button>
+
     <p>라이트모드에서 보일 이미지와 다크모드에서 보일 이미지를 선택하세요.</p>
     
     <label>☀️ 라이트 모드:</label>
@@ -33,6 +58,29 @@
 </div>
 
 <script>
+function swapFiles() {
+    const lightInput = document.getElementById('lightInput');
+    const darkInput = document.getElementById('darkInput');
+    
+    const lightFiles = lightInput.files;
+    const darkFiles = darkInput.files;
+
+    if (lightFiles.length === 0 && darkFiles.length === 0) {
+        alert("교체할 파일이 없습니다.");
+        return;
+    }
+
+    // DataTransfer를 사용하여 실제 input의 파일 객체를 교체
+    const dtLight = new DataTransfer();
+    const dtDark = new DataTransfer();
+
+    if (darkFiles[0]) dtLight.items.add(darkFiles[0]);
+    if (lightFiles[0]) dtDark.items.add(lightFiles[0]);
+
+    lightInput.files = dtLight.files;
+    darkInput.files = dtDark.files;
+}
+
 async function processImages() {
     const darkFile = document.getElementById('darkInput').files[0];
     const lightFile = document.getElementById('lightInput').files[0];
