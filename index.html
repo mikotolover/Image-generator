@@ -5,122 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>이중 이미지 메이커</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; line-height: 1.6; background-color: #f4f4f9; }
-        /* container에 relative 포지션 추가: 버튼을 절대 위치로 배치하기 위함 */
-        .container { 
-            max-width: 500px; 
-            margin: 0 auto; 
-            border: 1px solid #ccc; 
-            padding: 20px; 
-            border-radius: 10px; 
-            background: white;
-            position: relative; /* 중요 */
-        }
-        
-        /* 새로 추가된 미리보기 토글 버튼 스타일 */
-        #previewToggleBtn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: transparent;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            padding: 0;
-            width: auto; /* 기본 버튼 스타일 덮어쓰기 */
-            height: auto;
-            color: #333;
-            transition: transform 0.3s ease;
-        }
-        #previewToggleBtn:hover {
-            background: transparent;
-            transform: scale(1.1) rotate(15deg);
-        }
-
-        input { margin: 10px 0; width: 95%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;}
-        button.gen-btn { background: #007BFF; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px;}
-        button.gen-btn:hover { background: #0056b3; }
-        
-        /* 캔버스 스타일 수정 및 배경색 전환 트랜지션 추가 */
-        canvas { 
-            max-width: 100%; 
-            margin-top: 20px; 
-            border: 1px solid #eee; 
-            /* 배경색이 부드럽게 바뀌도록 설정 */
-            transition: background-color 0.3s ease, border-color 0.3s ease;
-            /* 기본 밝은 배경 (투명/흰색) */
-            background-color: #ffffff;
-            background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee);
-            background-size: 20px 20px;
-            background-position: 0 0, 10px 10px;
-        }
-
-        /* 다크 모드 미리보기 클래스 */
-        canvas.dark-preview {
-            background-color: #222222; /* 어두운 배경색 */
-            background-image: none; /* 체크무늬 제거 */
-            border-color: #444;
-        }
-
-        #downloadBtn { display: none; background: #28a745; margin-top: 15px; text-decoration: none; color: white; padding: 12px; border-radius: 5px; font-weight: bold; display: block; width: 100%; box-sizing: border-box;}
-        #downloadBtn:hover { background: #218838; }
-        .hidden { display: none !important; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; line-height: 1.6; }
+        .container { max-width: 500px; margin: 0 auto; border: 1px solid #ccc; padding: 20px; border-radius: 10px; }
+        input { margin: 10px 0; width: 100%; }
+        button { background: #007BFF; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        canvas { max-width: 100%; margin-top: 20px; border: 1px solid #eee; }
+        #downloadBtn { display: none; background: #28a745; margin-top: 10px; text-decoration: none; color: white; padding: 10px; border-radius: 5px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <button id="previewToggleBtn" title="배경색 전환 (다크/라이트)">🌑</button>
-
     <h2>🌓 이중 이미지 메이커</h2>
     <p>다크모드에서 보일 이미지와 라이트모드에서 보일 이미지를 선택하세요.</p>
     
-    <div style="text-align: left; display: inline-block; width: 100%;">
-        <label>🌑 다크 모드용 이미지:</label>
-        <input type="file" id="darkInput" accept="image/*">
-        
-        <label>☀️ 라이트 모드용 이미지:</label>
-        <input type="file" id="lightInput" accept="image/*">
-    </div>
+    <label>🌑 다크 모드:</label>
+    <input type="file" id="darkInput" accept="image/*">
     
-    <button class="gen-btn" onclick="processImages()">이미지 생성하기</button>
+    <label>☀️ 라이트 모드:</label>
+    <input type="file" id="lightInput" accept="image/*">
+    
+    <button onclick="processImages()">이미지 생성하기</button>
     
     <canvas id="resultCanvas"></canvas>
-    <a id="downloadBtn" class="hidden">결과 저장하기</a>
+    <a id="downloadBtn">결과 저장하기</a>
 </div>
 
 <script>
-// --- 기능 추가 부분 시작 ---
-let isDarkModePreview = false;
-const toggleBtn = document.getElementById('previewToggleBtn');
-const canvasElement = document.getElementById('resultCanvas');
-
-toggleBtn.addEventListener('click', () => {
-    isDarkModePreview = !isDarkModePreview;
-    if (isDarkModePreview) {
-        // 다크 모드 미리보기 켜기
-        canvasElement.classList.add('dark-preview');
-        toggleBtn.textContent = '☀️'; // 아이콘을 해 모양으로 변경
-    } else {
-        // 라이트 모드 미리보기 켜기 (기본)
-        canvasElement.classList.remove('dark-preview');
-        toggleBtn.textContent = '🌑'; // 아이콘을 달 모양으로 변경
-    }
-});
-// --- 기능 추가 부분 끝 ---
-
-
 async function processImages() {
     const darkFile = document.getElementById('darkInput').files[0];
     const lightFile = document.getElementById('lightInput').files[0];
-    const downloadBtn = document.getElementById('downloadBtn');
 
     if (!darkFile || !lightFile) {
         alert("이미지 두 개를 모두 골라주세요");
         return;
     }
-
-    // 이미지 처리 중 로딩 표시 등을 원한다면 여기에 추가
 
     const loadImage = (file) => new Promise((resolve) => {
         const img = new Image();
@@ -172,9 +92,10 @@ async function processImages() {
     const pad = (n) => String(n).padStart(2, '0');
     const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     
+    const downloadBtn = document.getElementById('downloadBtn');
     downloadBtn.href = canvas.toDataURL("image/png");
     downloadBtn.download = `dual_image_${timestamp}.png`;
-    downloadBtn.classList.remove('hidden'); // 생성 후 버튼 표시
+    downloadBtn.style.display = "block";
 }
 </script>
 
