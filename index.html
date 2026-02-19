@@ -6,7 +6,6 @@
     <title>이중 이미지 메이커</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; line-height: 1.6; }
-        /* 버튼 위치를 잡기 위해 relative 설정 추가 */
         .container { 
             max-width: 500px; 
             margin: 0 auto; 
@@ -18,8 +17,6 @@
         input { margin: 10px 0; width: 100%; }
         button { background: #007BFF; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-size: 16px; }
         button:hover { background: #0056b3; }
-        
-        /* 오른쪽 위 구석에 배치할 스왑 버튼 스타일 */
         .swap-btn { 
             position: absolute;
             top: 15px;
@@ -31,7 +28,6 @@
             line-height: 1.2;
         }
         .swap-btn:hover { background: #5a6268; }
-        
         canvas { max-width: 100%; margin-top: 20px; border: 1px solid #eee; }
         #downloadBtn { display: none; background: #28a745; margin-top: 10px; text-decoration: none; color: white; padding: 10px; border-radius: 5px; }
     </style>
@@ -40,9 +36,7 @@
 
 <div class="container">
     <h2>🌓 이중 이미지 메이커</h2>
-    
-    <button type="button" class="swap-btn" onclick="swapFiles()">⇅ 위치 바꾸기</button>
-
+    <button type="button" class="swap-btn" onclick="swapFiles()">⇅</button>
     <p>라이트모드에서 보일 이미지와 다크모드에서 보일 이미지를 선택하세요.</p>
     
     <label>☀️ 라이트 모드:</label>
@@ -61,7 +55,6 @@
 function swapFiles() {
     const lightInput = document.getElementById('lightInput');
     const darkInput = document.getElementById('darkInput');
-    
     const lightFiles = lightInput.files;
     const darkFiles = darkInput.files;
 
@@ -70,7 +63,6 @@ function swapFiles() {
         return;
     }
 
-    // DataTransfer를 사용하여 실제 input의 파일 객체를 교체
     const dtLight = new DataTransfer();
     const dtDark = new DataTransfer();
 
@@ -101,7 +93,6 @@ async function processImages() {
     });
 
     const [imgD, imgL] = await Promise.all([loadImage(darkFile), loadImage(lightFile)]);
-
     const canvas = document.getElementById('resultCanvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -123,13 +114,10 @@ async function processImages() {
     for (let i = 0; i < d.length; i += 4) {
         const gD = (dataD[i] + dataD[i+1] + dataD[i+2]) / 765;
         const gL = (dataL[i] + dataL[i+1] + dataL[i+2]) / 765;
-
         const c_black = gD * 0.5;
         const c_white = gL * 0.5 + 0.5;
-
         let alpha = Math.max(0.001, Math.min(1.0, 1.0 - (c_white - c_black)));
         let c_src = Math.max(0, Math.min(255, (c_black / alpha) * 255));
-
         d[i] = d[i+1] = d[i+2] = c_src;
         d[i+3] = alpha * 255;
     }
