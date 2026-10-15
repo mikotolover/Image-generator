@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const pkg='io.github.mikotolover.dualimage';
 const out='device-results';fs.mkdirSync(out,{recursive:true});
 const results=[];let device,page;
-const adb=(...args)=>execFileSync('adb',args,{encoding:'utf8',timeout:30000}).trim();
+const adb=(...args)=>execFileSync('adb',args,{encoding:'utf8',timeout:30000,maxBuffer:16*1024*1024}).trim();
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 function record(name,detail){results.push({name,status:'passed',detail});console.log('PASS',name,detail||'');}
 async function until(check,message,timeout=20000){const end=Date.now()+timeout;while(Date.now()<end){if(await check())return;await pause(400);}throw Error(message);}
@@ -46,12 +46,17 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
         for(let i=0;i<d.data.length;i+=4)d.data.set([(i+offset)%256,(i/4+offset)%256,offset,255],i);
         x.putImageData(d,0,0);return c.toDataURL().split(',')[1];
     }));
-    adb('shell','mkdir','-p','/sdcard/Pictures/DualImageFixtures');
     for(let i=0;i<fixtures.length;i++){
-        const local=`${out}/fixture-${i}.png`,remote=`/sdcard/Pictures/DualImageFixtures/fixture-${i}.png`;
-        fs.writeFileSync(local,Buffer.from(fixtures[i],'base64'));adb('push',local,remote);
-        adb('shell','am','broadcast','-a','android.intent.action.MEDIA_SCANNER_SCAN_FILE','-d','file://'+remote);
+        fs.writeFileSync(`${out}/fixture-${i}.png`,Buffer.from(fixtures[i],'base64'));
+        await page.evaluate(({png,name})=>{
+            exporting=true;
+            AndroidBridge.exportPng('data:image/png;base64,'+png,name,false);
+        },{png:fixtures[i],name:`dual_image_20000101_00000${i}.png`});
+        await page.waitForFunction(()=>!exporting,{},{timeout:30000});
+        assert.match(await page.locator('#status').innerText(),/갤러리.*저장/);
     }
+    record('Native MediaStore bridge registers the two fixture images');
+    fs.writeFileSync(`${out}/seed-media.txt`,adb('shell','content','query','--uri','content://media/external/images/media','--projection','_display_name:mime_type:relative_path:is_pending'));
     await choose('darkInput',0);await choose('lightInput',1);
     record('Native photo picker selects two content URIs into WebView',await page.evaluate(()=>[darkInput.files[0].name,lightInput.files[0].name]));
     await page.locator('#lightInput').click();await pause(800);adb('shell','input','keyevent','4');
@@ -66,7 +71,7 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     record('Preview background does not change output');
     await page.locator('#downloadBtn').click();await page.waitForFunction(()=>!exporting,{},{timeout:30000});
     assert.match(await page.locator('#status').innerText(),/갤러리.*저장/);
-    const names=adb('shell','ls','/sdcard/Pictures/DualImageMaker').split('\n').filter(x=>x.endsWith('.png'));assert.equal(names.length,1);
+    const names=adb('shell','ls','/sdcard/Pictures/DualImageMaker').split('\n').filter(x=>x.endsWith('.png')&&!x.startsWith('dual_image_20000101_'));assert.equal(names.length,1);
     adb('pull','/sdcard/Pictures/DualImageMaker/'+names[0],`${out}/saved.png`);
     assert.deepEqual(fs.readFileSync(`${out}/saved.png`),Buffer.from(original.split(',')[1],'base64'));
     record('MediaStore saves byte-identical transparent PNG',names[0]);
