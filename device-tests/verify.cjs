@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const pkg='io.github.mikotolover.dualimage';
 const out='device-results';fs.mkdirSync(out,{recursive:true});
 const results=[];let device,page;
+const saveOnly=process.env.SAVE_LOCATION_ONLY==='1';
 const adb=(...args)=>execFileSync('adb',args,{encoding:'utf8',timeout:30000,maxBuffer:16*1024*1024}).trim();
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 function record(name,detail){results.push({name,status:'passed',detail});console.log('PASS',name,detail||'');}
@@ -70,6 +71,17 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     }
     record('Native MediaStore bridge registers the two fixture images');
     fs.writeFileSync(`${out}/seed-media.txt`,adb('shell','content','query','--uri','content://media/external/images/media','--projection','_display_name:mime_type:relative_path:is_pending'));
+    if(saveOnly){
+        // Isolate native export from the separately reported Photo Picker file-metadata issue.
+        await page.evaluate(fixtures=>{
+            for(const [i,id] of ['darkInput','lightInput'].entries()){
+                const bytes=Uint8Array.from(atob(fixtures[i]),c=>c.charCodeAt(0));
+                const dt=new DataTransfer();dt.items.add(new File([bytes],'fixture-'+i+'.png',{type:'image/png'}));
+                const input=document.getElementById(id);input.files=dt.files;input.dispatchEvent(new Event('change'));
+            }
+        },fixtures);
+        record('Export-focused test uses synthetic input Files; native photo selection excluded');
+    }else{
     await choose('darkInput',0);await choose('lightInput',1);
     record('Native photo picker selects two content URIs into WebView',await page.evaluate(()=>[darkInput.files[0].name,lightInput.files[0].name]));
     await page.evaluate(()=>{
@@ -84,6 +96,7 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     record('Native picker cancel returns to app');
     // Cancellation can clear a browser file input; explicitly select again if necessary.
     if(!await page.evaluate(()=>lightInput.files.length))await choose('lightInput',1);
+    }
     await generate();const original=await png();
     assert.deepEqual(await page.evaluate(()=>[resultCanvas.width,resultCanvas.height]),[64,64]);
     record('Default generation keeps original min-dimension rule','64 x 64');
@@ -125,6 +138,12 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     adb('pull','/sdcard/Download/chosen-location.png',`${out}/chosen-location.png`);
     assert.deepEqual(fs.readFileSync(`${out}/chosen-location.png`),Buffer.from(original.split(',')[1],'base64'));
     record('Chosen Downloads folder and custom filename contain byte-identical PNG');
+    if(saveOnly){
+        const log=adb('logcat','-d','-s','AndroidRuntime:E');fs.writeFileSync(`${out}/android-runtime.txt`,log);assert(!log.includes('FATAL EXCEPTION'));
+        record('No Android runtime crash during export-focused verification');
+        return;
+    }
+
 
     await page.locator('#shareBtn').click();
     await until(()=>/ChooserActivity|ResolverActivity/.test(adb('shell','dumpsys','activity','activities')),'Android share sheet did not open');

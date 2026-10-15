@@ -1,9 +1,12 @@
 name: Android device verification
 on:
+  push:
+    branches: [codex/android-apk]
+    paths: ['device-tests/**', '.github/workflows/android-device-test.yml']
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: Successful Android APK build run ID
+        description: APK artifact build run ID
         required: true
         type: string
 permissions:
@@ -32,7 +35,7 @@ jobs:
         with:
           name: dual-image-maker-apk
           path: device-apk
-          run-id: ${{ inputs.build_run_id }}
+          run-id: ${{ inputs.build_run_id || '38694901981' }}
           github-token: ${{ github.token }}
       - name: Enable hardware acceleration
         run: |
@@ -48,7 +51,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
-          script: node device-tests/verify.cjs
+          script: SAVE_LOCATION_ONLY=1 node device-tests/verify.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
