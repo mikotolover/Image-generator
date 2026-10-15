@@ -106,3 +106,21 @@ test('preview backgrounds never alter the exported PNG and save/share bridge rec
     await app.evaluate(()=>window.onNativeExportResult(true,'shared'));
     fs.mkdirSync('test-results',{recursive:true});await app.screenshot({path:'test-results/app-preview.png',fullPage:true});
 });
+
+test('save as sends the unchanged PNG and cancellation or errors allow another save', async () => {
+    await reset();await inputs(app,await fixture(23,17,44),await fixture(17,23,87));await app.evaluate(()=>processImages());
+    const before=await output(app);
+    await app.evaluate(()=>{window.calls=[];window.AndroidBridge={savePngAs:(...args)=>window.calls.push(args)}});
+    await app.locator('#saveAsBtn').click();
+    const calls=await app.evaluate(()=>window.calls);
+    assert.equal(calls.length,1);assert.equal(calls[0][0],before.png);
+    assert.match(calls[0][1],/^dual_image_[0-9]{8}_[0-9]{6}\.png$/);
+    assert.equal(await app.locator('#saveAsBtn').isEnabled(),false);
+    assert.equal(await app.locator('#shareBtn').isEnabled(),false);
+    await app.evaluate(()=>window.onNativeExportResult(true,'저장을 취소했어.'));
+    assert.deepEqual(await output(app),before);assert.equal(await app.locator('#saveAsBtn').isEnabled(),true);
+    await app.locator('#saveAsBtn').click();
+    await app.evaluate(()=>window.onNativeExportResult(false,'저장 실패'));
+    assert.equal(await app.locator('#saveAsBtn').isEnabled(),true);
+    assert.equal(await app.locator('#result').isVisible(),true);
+});

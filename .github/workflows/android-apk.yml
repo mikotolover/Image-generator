@@ -38,7 +38,7 @@ jobs:
       - name: Verify APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/dual-image-maker-1.0.0-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/dual-image-maker-1.1.0-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/*.apk > dist/apk-signature.txt
           sha256sum dist/*.apk > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
@@ -54,4 +54,29 @@ jobs:
             test-results/
             android/app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Prepare on-device verification
+        run: |
+          mkdir -p device-apk
+          cp dist/* device-apk/
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify PNG save locations on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+          script: node device-tests/verify.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-device-verification
+          path: device-results/
+          if-no-files-found: warn
           retention-days: 30

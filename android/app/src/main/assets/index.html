@@ -18,6 +18,7 @@ button:disabled{opacity:.5;cursor:wait}.primary{background:#3158d5;color:white;w
 #preview{margin:14px 0;border:1px solid #cbd1df;border-radius:10px;overflow:hidden;line-height:0;background:#fff}canvas{display:block;max-width:100%;height:auto;margin:auto}
 #downloadBtn{background:#3158d5;color:#fff}#shareBtn{background:#eef1fa;color:#2c4179}h2{font-size:17px;margin:0}.bg-buttons{display:flex;gap:6px}.bg-buttons button{border:1px solid #cbd1df}.bg-buttons button[aria-pressed=true]{outline:2px solid #3158d5;outline-offset:1px}
 #whiteBg{background:#fff;color:#18213b}#blackBg{background:#000;color:#fff}:focus-visible{outline:3px solid #6488ff;outline-offset:3px}
+#saveAsBtn{width:100%;margin-top:10px}
 </style></head><body><main>
 <header><div class="eyebrow">DUAL IMAGE</div><h1>이중 이미지 메이커</h1><p>배경에 따라 다른 모습으로 보이는 이미지</p></header>
 <section class="card"><div class="row"><h2>사진 선택</h2><button id="swapBtn" class="secondary small" onclick="swapFiles()">⇅ 위치 바꾸기</button></div>
@@ -26,13 +27,13 @@ button:disabled{opacity:.5;cursor:wait}.primary{background:#3158d5;color:white;w
 <section class="card"><label for="fitMode">크기 맞추기</label><select id="fitMode"><option value="stretch">늘이기 · 현재 방식</option><option value="pad">배경 추가</option><option value="crop">크롭 · 가운데 기준</option></select><p id="fitHint" class="hint">두 사진을 출력 크기에 맞춰 늘여.</p></section>
 <button id="generateBtn" class="primary" onclick="processImages()">이미지 생성하기</button><div id="status" role="status" aria-live="polite"></div>
 <section id="result" class="card" hidden><div class="row"><h2>결과</h2><div class="bg-buttons"><button class="small" id="whiteBg" aria-pressed="true" onclick="setBackground(false)">흰색</button><button class="small" id="blackBg" aria-pressed="false" onclick="setBackground(true)">검정</button></div></div>
-<div id="preview"><canvas id="resultCanvas"></canvas></div><p id="dimensions" class="hint"></p><div class="actions"><a id="downloadBtn" class="action" href="#">PNG 저장</a><button id="shareBtn">공유</button></div><p class="hint">미리보기 배경은 저장되는 PNG에 포함되지 않아.</p></section>
+<div id="preview"><canvas id="resultCanvas"></canvas></div><p id="dimensions" class="hint"></p><div class="actions"><a id="downloadBtn" class="action" href="#">PNG 저장</a><button id="shareBtn">공유</button></div><button id="saveAsBtn" class="secondary">다른 위치에 저장</button><p class="hint">미리보기 배경은 저장되는 PNG에 포함되지 않아.</p></section>
 </main><script>
 let busy = false, exporting = false, generation = 0;
 const thumbnailUrls = {};
 function showStatus(message, error = false) { const el = document.getElementById('status'); el.textContent = message; el.classList.toggle('error', error); }
 function updateControls() {
-    for (const id of ['generateBtn','swapBtn','lightInput','darkInput','fitMode','shareBtn']) document.getElementById(id).disabled = busy || exporting;
+    for (const id of ['generateBtn','swapBtn','lightInput','darkInput','fitMode','shareBtn','saveAsBtn']) document.getElementById(id).disabled = busy || exporting;
     document.getElementById('downloadBtn').setAttribute('aria-disabled', String(busy || exporting));
     document.getElementById('generateBtn').textContent = busy ? '이미지 만드는 중…' : '이미지 생성하기';
 }
@@ -156,6 +157,14 @@ function exportImage(share) {
     } else if (share) { showStatus('공유는 안드로이드 앱에서 사용할 수 있어.'); }
 }
 window.onNativeExportResult = (success, message) => { exporting = false; updateControls(); showStatus(message, !success); };
+document.getElementById('saveAsBtn').addEventListener('click', () => {
+    if (busy || exporting || document.getElementById('result').hidden) return;
+    if (!window.AndroidBridge) { showStatus('저장 위치 선택은 안드로이드 앱에서 사용할 수 있어.'); return; }
+    const link = document.getElementById('downloadBtn');
+    exporting = true; updateControls(); showStatus('저장할 위치와 파일 이름을 골라줘.');
+    try { window.AndroidBridge.savePngAs(link.href, link.download); }
+    catch (_) { window.onNativeExportResult(false, '저장 위치 선택 창을 열지 못했어. 다시 시도해 줘.'); }
+});
 document.getElementById('downloadBtn').addEventListener('click', event => {
     if (window.AndroidBridge || busy || exporting) { event.preventDefault(); exportImage(false); }
 });

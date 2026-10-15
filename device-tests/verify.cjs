@@ -40,9 +40,9 @@ async function generate(){await page.evaluate(()=>void processImages());await pa
 async function png(){return page.evaluate(()=>document.getElementById('resultCanvas').toDataURL());}
 (async()=>{
  try {
-    const apk='device-apk/dual-image-maker-1.0.0-debug.apk';
+    const apk='device-apk/dual-image-maker-1.1.0-debug.apk';
     const sha=crypto.createHash('sha256').update(fs.readFileSync(apk)).digest('hex');
-    assert.equal(sha,'22ec42079d23ca8b83c32c8cf2fb100035f6a33e06f45a19cc0264bbdee85f07');
+    assert.equal(sha,fs.readFileSync('device-apk/SHA256SUMS.txt','utf8').trim().split(/\s+/)[0]);
     record('Exact delivered APK SHA-256',sha);
     adb('install','-r',apk);adb('logcat','-c');
     adb('shell','am','start','-W','-n',pkg+'/.MainActivity');
@@ -98,6 +98,34 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     const media=adb('shell','content','query','--uri','content://media/external/images/media','--projection','_display_name:mime_type:relative_path:is_pending');
     fs.writeFileSync(`${out}/media-store.txt`,media);assert(media.includes(names[0]));assert(media.includes('image/png'));
     record('Saved result is indexed in MediaStore');
+    await page.locator('#saveAsBtn').click();
+    await until(()=>nodes(dump('save-as-cancel')).some(n=>(n.package||'').includes('documentsui')),'System save dialog did not open');
+    adb('shell','input','keyevent','4');
+    await page.waitForFunction(()=>!exporting);
+    assert.match(await page.locator('#status').innerText(),/취소/);
+    assert.equal(await png(),original);assert.equal(await page.locator('#saveAsBtn').isEnabled(),true);
+    record('Save-as cancellation preserves result and unlocks controls');
+    await page.locator('#saveAsBtn').click();
+    let saveNodes;
+    await until(()=>{saveNodes=nodes(dump('save-as-open'));return saveNodes.some(n=>n.class==='android.widget.EditText')},'Save dialog has no filename field');
+    const roots=saveNodes.find(n=>/Show roots|Open navigation drawer/.test(n['content-desc']||''));
+    assert(roots,'Missing document location menu');tap(roots);
+    let downloads;
+    await until(()=>{downloads=nodes(dump('save-as-locations')).find(n=>n.text==='Downloads');return downloads},'Downloads location unavailable');tap(downloads);
+    let nameField;
+    await until(()=>{nameField=nodes(dump('save-as-downloads')).find(n=>n.class==='android.widget.EditText');return nameField},'Missing filename after location choice');
+    tap(nameField);adb('shell','input','keycombination','113','29');adb('shell','input','text','chosen-location.png');
+    // Hide the IME before tapping the system's save button.
+    adb('shell','input','keyevent','4');
+    let saveButton;
+    await until(()=>{saveButton=nodes(dump('save-as-ready')).find(n=>/^save$/i.test(n.text||'')&&n.enabled==='true');return saveButton},'System save button unavailable');
+    screenshot('save-as-ready');tap(saveButton);
+    await page.waitForFunction(()=>!exporting,{},{timeout:30000});
+    assert.match(await page.locator('#status').innerText(),/선택한 위치.*저장/);
+    adb('pull','/sdcard/Download/chosen-location.png',`${out}/chosen-location.png`);
+    assert.deepEqual(fs.readFileSync(`${out}/chosen-location.png`),Buffer.from(original.split(',')[1],'base64'));
+    record('Chosen Downloads folder and custom filename contain byte-identical PNG');
+
     await page.locator('#shareBtn').click();
     await until(()=>/ChooserActivity|ResolverActivity/.test(adb('shell','dumpsys','activity','activities')),'Android share sheet did not open');
     screenshot('share-sheet');dump('share-sheet');record('Native Android share sheet opens');adb('shell','input','keyevent','4');

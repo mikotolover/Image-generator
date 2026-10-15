@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Base64
 import android.util.Base64InputStream
@@ -39,6 +40,28 @@ class MainActivity : ComponentActivity() {
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private val exporting = AtomicBoolean(false)
     private val io = Executors.newSingleThreadExecutor()
+    private var pendingSave: String? = null
+    private val saveDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
+        val dataUrl = pendingSave
+        pendingSave = null
+        if (uri == null || dataUrl == null) {
+            exporting.set(false)
+            notifyExport(uri == null, if (uri == null) "저장을 취소했어." else "이미지를 다시 만들어 저장해 줘.")
+        } else {
+            io.execute {
+                val message = try {
+                    writePng(uri, dataUrl)
+                    "선택한 위치에 PNG를 저장했어."
+                } catch (_: Exception) {
+                    // CreateDocument creates a new file, never overwrites an existing one.
+                    runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
+                    null
+                }
+                exporting.set(false)
+                notifyExport(message != null, message ?: "저장하지 못했어. 다른 위치를 선택하거나 남은 공간을 확인해 줘.")
+            }
+        }
+    }
     private val picker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         fileCallback?.onReceiveValue(uri?.let { arrayOf(it) })
         fileCallback = null
@@ -103,6 +126,24 @@ class MainActivity : ComponentActivity() {
 
     private inner class ExportBridge {
         @JavascriptInterface
+        fun savePngAs(dataUrl: String, filename: String) {
+            if (!exporting.compareAndSet(false, true)) return
+            runOnUiThread {
+                try {
+                    check(!isFinishing && !isDestroyed)
+                    require(dataUrl.startsWith("data:image/png;base64,"))
+                    require(filename.matches(Regex("dual_image_[0-9]{8}_[0-9]{6}\\.png")))
+                    pendingSave = dataUrl
+                    saveDocument.launch(filename)
+                } catch (_: Exception) {
+                    pendingSave = null
+                    exporting.set(false)
+                    notifyExport(false, "저장 위치 선택 창을 열지 못했어. 다시 시도해 줘.")
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun exportPng(dataUrl: String, filename: String, share: Boolean) {
             if (!exporting.compareAndSet(false, true)) return
             io.execute {
@@ -120,20 +161,7 @@ class MainActivity : ComponentActivity() {
                     val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                         ?: error("저장 위치를 만들지 못했어.")
                     inserted = uri
-                    Base64InputStream(ByteArrayInputStream(dataUrl.substringAfter(',').toByteArray(Charsets.US_ASCII)), Base64.DEFAULT).use { input ->
-                        val magic = ByteArray(8)
-                        var offset = 0
-                        while (offset < magic.size) {
-                            val count = input.read(magic, offset, magic.size - offset)
-                            require(count > 0)
-                            offset += count
-                        }
-                        require(magic.contentEquals(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10)))
-                        contentResolver.openOutputStream(uri, "w")?.use { output ->
-                            output.write(magic)
-                            input.copyTo(output)
-                        } ?: error("저장 파일을 열지 못했어.")
-                    }
+                    writePng(uri, dataUrl)
                     contentResolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
                     committed = true
                     runOnUiThread {
@@ -163,6 +191,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun writePng(uri: Uri, dataUrl: String) {
+        Base64InputStream(ByteArrayInputStream(dataUrl.substringAfter(',').toByteArray(Charsets.US_ASCII)), Base64.DEFAULT).use { input ->
+            val magic = ByteArray(8)
+            var offset = 0
+            while (offset < magic.size) {
+                val count = input.read(magic, offset, magic.size - offset)
+                require(count > 0)
+                offset += count
+            }
+            require(magic.contentEquals(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10)))
+            contentResolver.openOutputStream(uri, "w")?.use { output ->
+                output.write(magic)
+                input.copyTo(output)
+            } ?: error("저장 파일을 열지 못했어.")
+        }
+    }
+
     private fun notifyExport(success: Boolean, message: String) {
         runOnUiThread {
             if (!isFinishing && !isDestroyed) {
@@ -172,6 +217,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        pendingSave = null
         fileCallback?.onReceiveValue(null)
         fileCallback = null
         webView.removeJavascriptInterface("AndroidBridge")
