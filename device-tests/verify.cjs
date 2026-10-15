@@ -16,6 +16,10 @@ function screenshot(name){fs.writeFileSync(`${out}/${name}.png`,execFileSync('ad
 function nodes(xml){return (xml.match(/<node\b[^>]*>/g)||[]).map(tag=>Object.fromEntries([...tag.matchAll(/([\w-]+)="([^"]*)"/g)].map(m=>[m[1],m[2]])));}
 function tap(node){const n=node.bounds.match(/\d+/g).map(Number);adb('shell','input','tap',String(Math.round((n[0]+n[2])/2)),String(Math.round((n[1]+n[3])/2)));}
 async function choose(id,index){
+    await page.evaluate(id=>{
+        window.pickerChangeReceived=false;
+        document.getElementById(id).addEventListener('change',()=>window.pickerChangeReceived=true,{once:true});
+    },id);
     await page.locator('#'+id).click();
     let images=[];
     await until(()=>{
@@ -23,7 +27,7 @@ async function choose(id,index){
         return images.length>=2;
     },'Photo picker did not expose the two seeded images',30000);
     screenshot('picker-'+id);tap(images[index]);
-    await until(()=>page.evaluate(id=>document.getElementById(id).files.length===1,id),'Photo picker selection did not reach WebView');
+    await until(()=>page.evaluate(id=>window.pickerChangeReceived&&document.getElementById(id).files.length===1,id),'Photo picker selection did not reach WebView');
 }
 async function generate(){await page.evaluate(()=>void processImages());await page.waitForFunction(()=>!busy,{},{timeout:30000});assert.equal(await page.locator('#result').isVisible(),true);}
 async function png(){return page.evaluate(()=>document.getElementById('resultCanvas').toDataURL());}
