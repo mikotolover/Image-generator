@@ -12,7 +12,17 @@ const adb=(...args)=>execFileSync('adb',args,{encoding:'utf8',timeout:30000,maxB
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 function record(name,detail){results.push({name,status:'passed',detail});console.log('PASS',name,detail||'');}
 async function until(check,message,timeout=20000){const end=Date.now()+timeout;while(Date.now()<end){if(await check())return;await pause(400);}throw Error(message);}
-function dump(name){adb('shell','uiautomator','dump','/sdcard/window.xml');const xml=adb('shell','cat','/sdcard/window.xml');fs.writeFileSync(`${out}/${name}.xml`,xml);return xml;}
+function dump(name){
+    adb('shell','uiautomator','dump','/sdcard/window.xml');const xml=adb('shell','cat','/sdcard/window.xml');
+    fs.writeFileSync(`${out}/${name}.xml`,xml);
+    const current=nodes(xml);
+    // Only dismiss the unrelated CI launcher; never dismiss an app or DocumentsUI ANR.
+    if(current.some(n=>n.text==="Pixel Launcher isn't responding")){
+        const close=current.find(n=>n['resource-id']==='android:id/aerr_close');
+        if(close){fs.writeFileSync(`${out}/${name}-launcher.xml`,xml);console.log('ENV: closing unrelated Pixel Launcher ANR');tap(close);return '<hierarchy/>';}
+    }
+    return xml;
+}
 function screenshot(name){fs.writeFileSync(`${out}/${name}.png`,execFileSync('adb',['exec-out','screencap','-p'],{timeout:20000}));}
 function nodes(xml){return (xml.match(/<node\b[^>]*>/g)||[]).map(tag=>Object.fromEntries([...tag.matchAll(/([\w-]+)="([^"]*)"/g)].map(m=>[m[1],m[2]])));}
 function tap(node){const n=node.bounds.match(/\d+/g).map(Number);adb('shell','input','tap',String(Math.round((n[0]+n[2])/2)),String(Math.round((n[1]+n[3])/2)));}
@@ -25,12 +35,6 @@ async function choose(id,index){
     let images=[];
     await until(()=>{
         const current=nodes(dump('picker-'+id));
-        // A cold CI emulator can show a launcher ANR over the picker. Dismiss
-        // only that unrelated process; an ANR in our app must still fail.
-        if(current.some(n=>n.text==="Pixel Launcher isn't responding")){
-            const close=current.find(n=>n['resource-id']==='android:id/aerr_close');
-            if(close){console.log('ENV: closing unrelated Pixel Launcher ANR');tap(close);return false;}
-        }
         images=current.filter(n=>/thumbnail|icon_image/.test(n['resource-id']||'') && n.bounds !== '[0,0][0,0]');
         return images.length>=2;
     },'Photo picker did not expose the two seeded images',30000);
