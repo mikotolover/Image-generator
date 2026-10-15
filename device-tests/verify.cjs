@@ -49,6 +49,8 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     [device]=await _android.devices({omitDriverInstall:true});assert(device);
     device.setDefaultTimeout(30000);const web=await device.webView({pkg});page=await web.page();page.setDefaultTimeout(20000);
     await page.waitForFunction(()=>typeof processImages==='function');
+    page.on('console',msg=>console.log('WEB:',msg.type(),msg.text()));
+    page.on('requestfailed',request=>console.log('WEB request failed:',request.url(),request.failure()));
     assert.equal(await page.title(),'이중 이미지 메이커');
     const environment={android:adb('shell','getprop','ro.build.version.release'),api:adb('shell','getprop','ro.build.version.sdk'),webview:adb('shell','dumpsys','webviewupdate')};
     fs.writeFileSync(`${out}/environment.json`,JSON.stringify(environment,null,2));record('Install and launch',environment.android);
@@ -70,8 +72,15 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     fs.writeFileSync(`${out}/seed-media.txt`,adb('shell','content','query','--uri','content://media/external/images/media','--projection','_display_name:mime_type:relative_path:is_pending'));
     await choose('darkInput',0);await choose('lightInput',1);
     record('Native photo picker selects two content URIs into WebView',await page.evaluate(()=>[darkInput.files[0].name,lightInput.files[0].name]));
-    await page.locator('#lightInput').click();await pause(800);adb('shell','input','keyevent','4');
+    await page.evaluate(()=>{
+        window.pickerCancelReceived=false;
+        for(const name of ['change','cancel'])lightInput.addEventListener(name,()=>window.pickerCancelReceived=true,{once:true});
+    });
+    await page.locator('#lightInput').click();
+    await until(()=>nodes(dump('cancel-picker')).some(n=>(n.package||'').includes('providers.media')),'Picker did not open for cancellation');
+    adb('shell','input','keyevent','4');
     await until(()=>adb('shell','dumpsys','activity','activities').split('\n').some(l=>/mResumedActivity|topResumedActivity/.test(l)&&l.includes(pkg)),'Did not return from picker cancellation');
+    await page.waitForFunction(()=>window.pickerCancelReceived);
     record('Native picker cancel returns to app');
     // Cancellation can clear a browser file input; explicitly select again if necessary.
     if(!await page.evaluate(()=>lightInput.files.length))await choose('lightInput',1);
@@ -111,6 +120,14 @@ async function png(){return page.evaluate(()=>document.getElementById('resultCan
     record('No Android runtime crash');
  }catch(error){
     results.push({name:'failure',status:'failed',detail:error.stack});console.error(error);
+    try{fs.writeFileSync(`${out}/file-state.json`,JSON.stringify(await page.evaluate(async()=>({
+        status:document.getElementById('status').textContent,busy,exporting,generation,
+        files:await Promise.all(['darkInput','lightInput'].map(async id=>{
+            const f=document.getElementById(id).files[0];if(!f)return {id,empty:true};
+            try{const b=new Uint8Array(await f.arrayBuffer());return {id,name:f.name,size:f.size,modified:f.lastModified,length:b.length,magic:Array.from(b.slice(0,16))};}
+            catch(e){return {id,name:f.name,size:f.size,error:String(e)};}
+        }))
+    })),null,2));}catch(_){}
     try{screenshot('failure');dump('failure');fs.writeFileSync(`${out}/logcat.txt`,adb('logcat','-d'));}catch(_){}
     process.exitCode=1;
  }finally{
