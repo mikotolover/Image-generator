@@ -23,7 +23,14 @@ async function choose(id,index){
     await page.locator('#'+id).click();
     let images=[];
     await until(()=>{
-        images=nodes(dump('picker-'+id)).filter(n=>/thumbnail|icon_image/.test(n['resource-id']||'') && n.bounds !== '[0,0][0,0]');
+        const current=nodes(dump('picker-'+id));
+        // A cold CI emulator can show a launcher ANR over the picker. Dismiss
+        // only that unrelated process; an ANR in our app must still fail.
+        if(current.some(n=>n.text==="Pixel Launcher isn't responding")){
+            const close=current.find(n=>n['resource-id']==='android:id/aerr_close');
+            if(close){console.log('ENV: closing unrelated Pixel Launcher ANR');tap(close);return false;}
+        }
+        images=current.filter(n=>/thumbnail|icon_image/.test(n['resource-id']||'') && n.bounds !== '[0,0][0,0]');
         return images.length>=2;
     },'Photo picker did not expose the two seeded images',30000);
     screenshot('picker-'+id);tap(images[index]);
