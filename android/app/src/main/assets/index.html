@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="color-scheme" content="light">
+<title>이중 이미지 메이커</title>
+<style>
+*{box-sizing:border-box} [hidden]{display:none!important}
+body{margin:0;padding:24px 18px 32px;background:#f4f5fa;color:#18213b;font-family:system-ui,sans-serif;line-height:1.55;color-scheme:light}
+main{max-width:520px;margin:auto} header{margin:4px 0 24px} h1{font-size:25px;letter-spacing:-1px;margin:4px 0 6px} p{margin:0;color:#59627a;font-size:14px}
+.eyebrow{color:#3158d5;font-size:12px;font-weight:700;letter-spacing:2px}.card{background:white;padding:18px;border:1px solid #e1e5ef;border-radius:18px;margin:12px 0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}.field{padding:12px 0}.field+.field{border-top:1px solid #edf0f7}label{display:block;font-weight:650;margin-bottom:8px}
+input,select{width:100%;font:inherit;font-size:14px}input::file-selector-button{padding:10px;border:0;border-radius:8px;background:#eef1fa;color:#24386d;margin-right:8px}
+select{background:white;color:#18213b;border:1px solid #c9d1e3;border-radius:10px;padding:12px}button,.action{font:inherit;font-weight:600;border:0;cursor:pointer;border-radius:12px;padding:13px 16px;text-align:center;text-decoration:none}
+button:disabled{opacity:.5;cursor:wait}.primary{background:#3158d5;color:white;width:100%}.secondary{background:#eef1fa;color:#2c4179}.small{font-size:13px;padding:10px 12px}.actions{display:flex;gap:10px}.actions>*{flex:1}
+.thumb{display:block;max-height:140px;max-width:100%;margin:12px auto 0;object-fit:contain;border-radius:8px}.hint{font-size:12px;margin-top:8px}
+#status{font-size:14px;min-height:24px;padding:8px 2px;overflow-wrap:anywhere}#status.error{color:#b02535}
+#preview{margin:14px 0;border:1px solid #cbd1df;border-radius:10px;overflow:hidden;line-height:0;background:#fff}canvas{display:block;max-width:100%;height:auto;margin:auto}
+#downloadBtn{background:#3158d5;color:#fff}#shareBtn{background:#eef1fa;color:#2c4179}h2{font-size:17px;margin:0}.bg-buttons{display:flex;gap:6px}.bg-buttons button{border:1px solid #cbd1df}.bg-buttons button[aria-pressed=true]{outline:2px solid #3158d5;outline-offset:1px}
+#whiteBg{background:#fff;color:#18213b}#blackBg{background:#000;color:#fff}:focus-visible{outline:3px solid #6488ff;outline-offset:3px}
+</style></head><body><main>
+<header><div class="eyebrow">DUAL IMAGE</div><h1>이중 이미지 메이커</h1><p>배경에 따라 다른 모습으로 보이는 이미지</p></header>
+<section class="card"><div class="row"><h2>사진 선택</h2><button id="swapBtn" class="secondary small" onclick="swapFiles()">⇅ 위치 바꾸기</button></div>
+<div class="field"><label for="lightInput">☀️ 라이트 모드</label><input type="file" id="lightInput" accept="image/*"><img class="thumb" id="lightThumb" alt="라이트용 사진" hidden></div>
+<div class="field"><label for="darkInput">🌑 다크 모드</label><input type="file" id="darkInput" accept="image/*"><img class="thumb" id="darkThumb" alt="다크용 사진" hidden></div></section>
+<section class="card"><label for="fitMode">크기 맞추기</label><select id="fitMode"><option value="stretch">늘이기 · 현재 방식</option><option value="pad">배경 추가</option><option value="crop">크롭 · 가운데 기준</option></select><p id="fitHint" class="hint">두 사진을 출력 크기에 맞춰 늘여.</p></section>
+<button id="generateBtn" class="primary" onclick="processImages()">이미지 생성하기</button><div id="status" role="status" aria-live="polite"></div>
+<section id="result" class="card" hidden><div class="row"><h2>결과</h2><div class="bg-buttons"><button class="small" id="whiteBg" aria-pressed="true" onclick="setBackground(false)">흰색</button><button class="small" id="blackBg" aria-pressed="false" onclick="setBackground(true)">검정</button></div></div>
+<div id="preview"><canvas id="resultCanvas"></canvas></div><p id="dimensions" class="hint"></p><div class="actions"><a id="downloadBtn" class="action" href="#">PNG 저장</a><button id="shareBtn">공유</button></div><p class="hint">미리보기 배경은 저장되는 PNG에 포함되지 않아.</p></section>
+</main><script>
+let busy = false, exporting = false, generation = 0;
+const thumbnailUrls = {};
+function showStatus(message, error = false) { const el = document.getElementById('status'); el.textContent = message; el.classList.toggle('error', error); }
+function updateControls() {
+    for (const id of ['generateBtn','swapBtn','lightInput','darkInput','fitMode','shareBtn']) document.getElementById(id).disabled = busy || exporting;
+    document.getElementById('downloadBtn').setAttribute('aria-disabled', String(busy || exporting));
+    document.getElementById('generateBtn').textContent = busy ? '이미지 만드는 중…' : '이미지 생성하기';
+}
+function invalidateResult() {
+    generation++;
+    document.getElementById('result').hidden = true;
+    document.getElementById('downloadBtn').removeAttribute('href');
+    showStatus('');
+}
+function updateThumbnail(kind) {
+    if (thumbnailUrls[kind]) URL.revokeObjectURL(thumbnailUrls[kind]);
+    const file = document.getElementById(kind+'Input').files[0], image = document.getElementById(kind+'Thumb');
+    image.hidden = true; image.removeAttribute('src');
+    if (file) { thumbnailUrls[kind] = URL.createObjectURL(file); image.onload = () => image.hidden = false; image.onerror = () => image.hidden = true; image.src = thumbnailUrls[kind]; }
+}
+function setBackground(dark) {
+    document.getElementById('preview').style.backgroundColor = dark ? '#000' : '#fff';
+    document.getElementById('whiteBg').setAttribute('aria-pressed', String(!dark));
+    document.getElementById('blackBg').setAttribute('aria-pressed', String(dark));
+}
+function drawFitted(ctx, image, width, height, mode, background) {
+    if (mode === 'pad') { ctx.fillStyle = background; ctx.fillRect(0, 0, width, height); }
+    const scale = mode === 'pad' ? Math.min(width / image.width, height / image.height) : Math.max(width / image.width, height / image.height);
+    const w = image.width * scale, h = image.height * scale;
+    ctx.drawImage(image, (width - w) / 2, (height - h) / 2, w, h);
+}
+function swapFiles() {
+    if (busy || exporting) return;
+    const lightInput = document.getElementById('lightInput');
+    const darkInput = document.getElementById('darkInput');
+    const lightFiles = lightInput.files;
+    const darkFiles = darkInput.files;
+
+    if (lightFiles.length === 0 && darkFiles.length === 0) {
+        alert("교체할 파일이 없습니다.");
+        return;
+    }
+
+    const dtLight = new DataTransfer();
+    const dtDark = new DataTransfer();
+
+    if (darkFiles[0]) dtLight.items.add(darkFiles[0]);
+    if (lightFiles[0]) dtDark.items.add(lightFiles[0]);
+
+    lightInput.files = dtLight.files;
+    darkInput.files = dtDark.files;
+    invalidateResult();
+    updateThumbnail("light");
+    updateThumbnail("dark");
+}
+
+
+async function processImages() {
+    if (busy || exporting) return;
+    const darkFile = document.getElementById('darkInput').files[0];
+    const lightFile = document.getElementById('lightInput').files[0];
+    if (!darkFile || !lightFile) { showStatus('이미지 두 개를 모두 골라줘.', true); return; }
+    invalidateResult();
+    const requestId = generation, mode = document.getElementById('fitMode').value;
+    busy = true; updateControls(); showStatus('이미지를 만드는 중이야.');
+    const loadImage = (file) => new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('사진을 읽지 못했어. 다른 이미지 파일을 선택해 줘.')); };
+        img.src = url;
+    });
+    try {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const [imgD, imgL] = await Promise.all([loadImage(darkFile), loadImage(lightFile)]);
+    if (requestId !== generation) return;
+    const canvas = document.getElementById('resultCanvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const width = Math.min(imgD.width, imgL.width);
+    const height = Math.min(imgD.height, imgL.height);
+    canvas.width = width;
+    canvas.height = height;
+
+    if (mode === 'stretch') { ctx.drawImage(imgD, 0, 0, width, height); }
+    else { drawFitted(ctx, imgD, width, height, mode, '#000'); }
+    const dataD = ctx.getImageData(0, 0, width, height).data;
+    ctx.clearRect(0, 0, width, height);
+    if (mode === 'stretch') { ctx.drawImage(imgL, 0, 0, width, height); }
+    else { drawFitted(ctx, imgL, width, height, mode, '#fff'); }
+    const dataL = ctx.getImageData(0, 0, width, height).data;
+    const output = ctx.createImageData(width, height);
+    const d = output.data;
+
+    for (let i = 0; i < d.length; i += 4) {
+        const gD = (dataD[i] + dataD[i+1] + dataD[i+2]) / 765;
+        const gL = (dataL[i] + dataL[i+1] + dataL[i+2]) / 765;
+        const c_black = gD * 0.5;
+        const c_white = gL * 0.5 + 0.5;
+        let alpha = Math.max(0.001, Math.min(1.0, 1.0 - (c_white - c_black)));
+        let c_src = Math.max(0, Math.min(255, (c_black / alpha) * 255));
+        d[i] = d[i+1] = d[i+2] = c_src;
+        d[i+3] = alpha * 255;
+    }
+
+    ctx.putImageData(output, 0, 0);
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const downloadBtn = document.getElementById('downloadBtn');
+    downloadBtn.href = canvas.toDataURL("image/png");
+    downloadBtn.download = `dual_image_${timestamp}.png`;
+    document.getElementById('result').hidden = false;
+    document.getElementById('dimensions').textContent = `${width} × ${height} px · PNG`;
+    showStatus('이미지를 만들었어. 흰색·검정 배경으로 확인해 봐.');
+    } catch (error) { showStatus(error.message || '이미지를 만들지 못했어. 다시 시도해 줘.', true); }
+    finally { busy = false; updateControls(); }
+}
+function exportImage(share) {
+    if (busy || exporting || document.getElementById('result').hidden) return;
+    const link = document.getElementById('downloadBtn');
+    if (window.AndroidBridge) {
+        exporting = true; updateControls(); showStatus('이미지를 저장하는 중이야.');
+        try { window.AndroidBridge.exportPng(link.href, link.download, share); }
+        catch (_) { window.onNativeExportResult(false, '저장하지 못했어. 다시 시도해 줘.'); }
+    } else if (share) { showStatus('공유는 안드로이드 앱에서 사용할 수 있어.'); }
+}
+window.onNativeExportResult = (success, message) => { exporting = false; updateControls(); showStatus(message, !success); };
+document.getElementById('downloadBtn').addEventListener('click', event => {
+    if (window.AndroidBridge || busy || exporting) { event.preventDefault(); exportImage(false); }
+});
+document.getElementById('shareBtn').addEventListener('click', () => exportImage(true));
+for (const kind of ['light', 'dark']) document.getElementById(kind+'Input').addEventListener('change', () => { invalidateResult(); updateThumbnail(kind); });
+document.getElementById('fitMode').addEventListener('change', event => {
+    invalidateResult();
+    document.getElementById('fitHint').textContent = {stretch:'두 사진을 출력 크기에 맞춰 늘여.',pad:'비율을 유지하고 라이트용은 흰색, 다크용은 검정 배경을 채워.',crop:'비율을 유지하고 가운데를 기준으로 넘치는 부분을 잘라내.'}[event.target.value];
+});
+</script></body></html>

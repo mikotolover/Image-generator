@@ -1,0 +1,6 @@
+{
+  "name": "dual-image-maker-verification",
+  "private": true,
+  "scripts": { "test": "node --test tests/browser.cjs" },
+  "devDependencies": { "playwright": "1.58.2" }
+}
